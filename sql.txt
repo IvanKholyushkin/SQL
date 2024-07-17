@@ -1,1 +1,57 @@
+select 
+    ext.ext,
+    p2.extid,
+    p2.valuetext as usemode_valuetext,
+    p2.datefrom,
+    p1.valuetext as sim_status_contract
+from 
+    dbo.m2mextension ext
+join 
+    dbo.m2mpropsimtypestoterbank typter on ext.idr = typter.extid and typter.dateto > now()
+join 
+    dbo.mobsimtypesclassestoterbank classter on typter.simtypesid = classter.idr
+join 
+    dbo.mobsimtypes typ on classter.simtypeid = typ.id
+join 
+    dbo.m2mextenssionproperty p2 on ext.idr = p2.extid
+join 
+    dbo.m2mextenssionproperty p1 on ext.idr = p1.extid
+where 
+    (
+        typ."name" IN ('POS-терминал', 'SmartPos', 'инфокассы') 
+        and p2.propertyfiedid = (
+            select idr
+            from dbo.tarPropertyField
+            where privatename = 'M2M_USEMODE'
+        )
+        and p2.dateto > now() 
+        and p2.valuetext like 'UPOS%' 
+        and p2.datefrom < now() - interval '2 months'
+        and p1.propertyfiedid = (
+            select idr
+            from dbo.tarPropertyField
+            where privatename = 'M2M_SIM_STATUS_CONTRACT'
+        ) 
+        and p1.dateto > now() 
+        and lower(p1.valuetext) = lower('в договоре')
+    ) 
+    or 
+    (
+        typ."name" IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+        and p2.propertyfiedid = (
+            select idr
+            from dbo.tarPropertyField
+            where privatename = 'M2M_USEMODE'
+        )
+        and p2.dateto > now() 
+        and p2.valuetext like 'SDWAN%' 
+        and p2.datefrom < now() - interval '2 months'
+        and p1.propertyfiedid = (
+            select idr
+            from dbo.tarPropertyField
+            where privatename = 'M2M_SIM_STATUS_CONTRACT'
+        ) 
+        and p1.dateto > now() 
+        and lower(p1.valuetext) = lower('в договоре')
+    );
 
