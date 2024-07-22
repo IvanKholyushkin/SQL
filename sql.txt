@@ -18,7 +18,8 @@ SELECT
     END AS extracted_date,
     p2.extid,
     p2.valuetext AS usemode_valuetext,
-    p1.valuetext AS sim_status_contract
+    p1.valuetext AS sim_status_contract,
+    iccid.valuetext AS ICCID
 FROM 
     dbo.m2mextension ext
 JOIN 
@@ -31,6 +32,16 @@ JOIN
     dbo.m2mextenssionproperty p2 ON ext.idr = p2.extid
 JOIN 
     dbo.m2mextenssionproperty p1 ON ext.idr = p1.extid
+LEFT JOIN 
+    (SELECT extid, valuetext 
+     FROM dbo.m2mextenssionproperty 
+     WHERE propertyfiedid = (
+         SELECT idr 
+         FROM dbo.tarPropertyField 
+         WHERE privatename = 'M2M_ICCID'
+     ) 
+     AND dateto > NOW()
+    ) iccid ON ext.idr = iccid.extid
 WHERE 
     ext.idr NOT IN (
         SELECT extid
@@ -86,4 +97,4 @@ WHERE
         WHERE privatename = 'M2M_SIM_STATUS_CONTRACT'
     ) 
     AND p1.dateto > NOW() 
-    AND lower(p1.valuetext) = lower('в договоре');
+    AND LOWER(p1.valuetext) = LOWER('в договоре');
