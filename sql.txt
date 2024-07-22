@@ -98,3 +98,91 @@ WHERE
     ) 
     AND p1.dateto > NOW() 
     AND LOWER(p1.valuetext) = LOWER('в договоре');
+
+____________________________________________________________
+SELECT 
+    ext.ext,
+    ext.remark,
+    p2.extid,
+    p2.valuetext AS usemode_valuetext,
+    p1.valuetext AS sim_status_contract,
+    iccid.valuetext AS ICCID
+FROM 
+    dbo.m2mextension ext
+JOIN 
+    dbo.m2mpropsimtypestoterbank typter ON ext.idr = typter.extid AND typter.dateto > NOW()
+JOIN 
+    dbo.mobsimtypesclassestoterbank classter ON typter.simtypesid = classter.idr
+JOIN 
+    dbo.mobsimtypes typ ON classter.simtypeid = typ.id
+JOIN 
+    dbo.m2mextenssionproperty p2 ON ext.idr = p2.extid
+JOIN 
+    dbo.m2mextenssionproperty p1 ON ext.idr = p1.extid
+LEFT JOIN 
+    (SELECT extid, valuetext 
+     FROM dbo.m2mextenssionproperty 
+     WHERE propertyfiedid = (
+         SELECT idr 
+         FROM dbo.tarPropertyField 
+         WHERE privatename = 'M2M_ICCID'
+     ) 
+     AND dateto > NOW()
+    ) iccid ON ext.idr = iccid.extid
+WHERE 
+    ext.idr NOT IN (
+        SELECT extid
+        FROM dbo.m2mextenssionproperty
+        WHERE propertyfiedid = (
+            SELECT idr 
+            FROM dbo.tarPropertyField 
+            WHERE privatename = 'M2M_DONT_BLOCK'
+        ) 
+        AND dateto > NOW()
+    )
+    AND ext.idr NOT IN (
+        SELECT extid
+        FROM dbo.m2mextenssionproperty
+        WHERE propertyfiedid = (
+            SELECT idr 
+            FROM dbo.tarPropertyField 
+            WHERE privatename = 'M2M_STATUS'
+        )
+        AND dateto > NOW()
+        AND valuetext = 'Первоначальная блокировка'
+    ) 
+    AND (
+        (
+            split_part(ext.remark, ' ', 1) = 'UPOS'
+            AND typ."name" IN ('POS-терминал', 'SmartPos')
+            AND CASE 
+                    WHEN position('_' IN ext.remark) > 0 THEN
+                        to_timestamp(substring(ext.remark, position('_' IN ext.remark) + 1), 'YYYY-MM-DD HH24:MI:SS')
+                    WHEN position(' ' IN ext.remark) > 0 THEN
+                        to_date(substring(ext.remark, position(' ' IN ext.remark) + 1), 'DD.MM.YYYY')
+                    ELSE
+                        NULL
+                END < NOW() - INTERVAL '2 months'
+        ) 
+        OR 
+        (
+            split_part(ext.remark, ' ', 1) = 'SDWAN'
+            AND typ."name" IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+            AND CASE 
+                    WHEN position('_' IN ext.remark) > 0 THEN
+                        to_timestamp(substring(ext.remark, position('_' IN ext.remark) + 1), 'YYYY-MM-DD HH24:MI:SS')
+                    WHEN position(' ' IN ext.remark) > 0 THEN
+                        to_date(substring(ext.remark, position(' ' IN ext.remark) + 1), 'DD.MM.YYYY')
+                    ELSE
+                        NULL
+                END < NOW() - INTERVAL '2 months'
+        )
+    )
+    AND p1.propertyfiedid = (
+        SELECT idr 
+        FROM dbo.tarPropertyField 
+        WHERE privatename = 'M2M_SIM_STATUS_CONTRACT'
+    ) 
+    AND p1.dateto > NOW() 
+    AND LOWER(p1.valuetext) = LOWER('в договоре');
+
