@@ -285,5 +285,32 @@ CASE
         ELSE
             p2.valuetext
     END AS m2m_usemode
+______________________________________
+select 
+    p1.valuetext as sim_status_contract,
+    p2.extid,
+    p2.valuetext as usemode_valuetext,
+    p2.datefrom
+from 
+    dbo.m2mextenssionproperty p1
+join 
+    dbo.m2mextenssionproperty p2 on p1.extid = p2.extid
+where 
+    p1.propertyfiedid = (
+        select idr
+        from dbo.tarPropertyField
+        where privatename = 'M2M_SIM_STATUS_CONTRACT'
+    ) 
+    and p1.dateto > now() 
+    and lower(p1.valuetext) = lower('в договоре')
+    and p2.propertyfiedid = (
+        select idr
+        from dbo.tarPropertyField
+        where privatename = 'M2M_USEMODE'
+    ) 
+    and p2.dateto > now() 
+    and p2.valuetext like 'UPOS%' 
+    and p2.datefrom < now() - interval '2 months';
+
 
 
