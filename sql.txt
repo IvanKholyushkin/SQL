@@ -278,5 +278,12 @@ WHERE
                 END < date_trunc('month', NOW()) - INTERVAL '2 months'        
         )
     );
+______________________________________________________________________________________________________
+CASE
+        WHEN position('_' IN p2.valuetext) > 0 THEN
+            split_part(p2.valuetext, '_', 1) || ' ' || to_char(to_timestamp(substring(p2.valuetext, position('_' IN p2.valuetext) + 1, 19), 'YYYY-MM-DD HH24:MI:SS'), 'DD.MM.YYYY')
+        ELSE
+            p2.valuetext
+    END AS m2m_usemode
 
 
