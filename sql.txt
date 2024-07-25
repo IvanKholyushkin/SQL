@@ -458,6 +458,142 @@ BEGIN
     RETURN QUERY EXECUTE sql_query;
 END;
 $$ LANGUAGE plpgsql;
+__________________________________________________________________________________
+CREATE OR REPLACE FUNCTION get_filtered_m2m_data(
+    current_date DATE
+)
+RETURNS TABLE (
+    operator VARCHAR,
+    msisdn VARCHAR,
+    iccid VARCHAR,
+    m2m_type VARCHAR,
+    m2m_usemode VARCHAR,
+    tb VARCHAR,
+    gosb VARCHAR,
+    status VARCHAR,
+    data VARCHAR
+) AS $$
+DECLARE
+    prev_month_1 DATE := date_trunc('month', current_date);
+    prev_month_2 DATE := date_trunc('month', current_date) - INTERVAL '1 month';
+    sql_query TEXT;
+BEGIN
+    -- Формируем динамический SQL запрос для проверки трафика за последние два месяца
+    sql_query := format($f$
+        SELECT
+            op.name AS operator,
+            ext.ext AS msisdn,
+            iccid.valuetext AS iccid,
+            st.name AS m2m_type,
+            CASE
+                WHEN position('_' IN ep.valuetext) > 0 THEN
+                    split_part(ep.valuetext, '_', 1) || '_' || substring(ep.valuetext, position('_' IN ep.valuetext) + 1, 10)
+                ELSE
+                    ep.valuetext
+            END AS m2m_usemode,
+            tb.fullname AS tb,
+            g.name AS gosb,
+            NULL AS status,
+            NULL AS data
+        FROM
+            dbo.m2mextension ext
+        JOIN
+            dbo.taraccounts acc ON ext.accoutid = acc.id
+        JOIN
+            dbo.taroperator op ON acc.operatorid = op.idr
+        JOIN
+            dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid   
+        JOIN
+            dbo.catgosbtoterbank g ON g.id = gm.gostoterbankid 
+        JOIN
+            dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()    
+        JOIN
+            dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr      
+        JOIN
+            dbo.mobsimtypes st ON stc.simtypeid = st.id 
+        JOIN
+            dbo.m2mextensionproperty ep ON ext.idr = ep.extid
+        JOIN
+            dbo.m2mextensionproperty p1 ON ext.idr = p1.extid AND p1.propertyfieldid = (
+                SELECT idr 
+                FROM dbo.tarPropertyField
+                WHERE privatename = 'M2M_SIM_STATUS_CONTRACT'
+            )
+            AND p1.dateto > NOW()
+            AND LOWER(p1.valuetext) = LOWER('в договоре')
+        LEFT JOIN
+            (SELECT extid, valuetext
+             FROM dbo.m2mextensionproperty 
+             WHERE propertyfieldid = (
+                 SELECT idr 
+                 FROM dbo.tarPropertyField 
+                 WHERE privatename = 'M2M_ICCID'
+             ) 
+             AND dateto > NOW()
+            ) iccid ON ext.idr = iccid.extid
+        JOIN
+            dbo.catterbank tb ON tb.id = acc.terbankid
+        WHERE
+            ext.idr NOT IN (
+                SELECT extid
+                FROM dbo.m2mextensionproperty 
+                WHERE propertyfieldid = (
+                    SELECT idr 
+                    FROM dbo.tarPropertyField 
+                    WHERE privatename = 'M2M_DONT_BLOCK'
+                )
+                AND dateto > NOW()
+            )
+            AND ext.idr IN (
+                SELECT extid
+                FROM dbo.m2mextensionproperty 
+                WHERE propertyfieldid = (
+                    SELECT idr 
+                    FROM dbo.tarPropertyField 
+                    WHERE privatename = 'M2M_STATUS'
+                )
+                AND dateto > NOW()
+                AND valuetext != 'Первоначальная блокировка'
+                AND (valuetext = 'Активен' OR valuetext IS NULL)
+            )
+            AND (op.name = 'Сбербанк Телеком(М2М)' OR op.name = 'МТС (М2М)')
+            AND (
+                (
+                    split_part(ep.valuetext, ' ', 1) = 'UPOS'
+                    AND st.name IN ('POS-терминал', 'SmartPos')
+                    AND CASE 
+                        WHEN position(' ' IN ep.valuetext) > 0 THEN
+                            to_date(substring(ep.valuetext, position(' ' IN ep.valuetext) + 1), 'DD.MM.YYYY')  
+                        ELSE
+                            NULL  
+                    END < date_trunc('month', NOW()) - INTERVAL '2 months'
+                )
+                OR
+                (
+                    split_part(ep.valuetext, '_', 1) = 'SDWAN'
+                    AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+                    AND CASE
+                        WHEN position('_' IN ep.valuetext) > 0 THEN
+                            to_date(substring(ep.valuetext, position('_' IN ep.valuetext) + 1, 10), 'YYYY-MM-DD')
+                        ELSE 
+                            NULL
+                        END < date_trunc('month', NOW()) - INTERVAL '2 months'
+                )
+            )
+            AND ext.idr NOT IN (
+                SELECT extid
+                FROM (
+                    SELECT extid FROM aggmobilecalls_%s WHERE servicetype = 'интернет'
+                    UNION ALL
+                    SELECT extid FROM aggmobilecalls_%s WHERE servicetype = 'интернет'
+                ) t
+            )
+        $f$, to_char(prev_month_1, 'YYYYMM'), to_char(prev_month_2, 'YYYYMM'));
+    
+    RETURN QUERY EXECUTE sql_query;
+END;
+$$ LANGUAGE plpgsql;
+
 
 
 
