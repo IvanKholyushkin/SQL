@@ -1933,10 +1933,10 @@ BEGIN
             AND LOWER(p1.valuetext) = LOWER(''в договоре'')
         LEFT JOIN
             (SELECT extid, valuetext
-             FROM dbo.m2mextensionproperty
+             FROM dbo.m2mextensionproperty 
              WHERE propertyfieldid = (
                  SELECT idr
-                 FROM dbo.tarPropertyField
+                 FROM dbo.tarPropertyField 
                  WHERE privatename = ''M2M_ICCID''
              )
              AND dateto > NOW()
@@ -1946,7 +1946,7 @@ BEGIN
         WHERE
             ext.idr NOT IN (
                 SELECT extid
-                FROM dbo.m2mextensionproperty
+                FROM dbo.m2mextensionproperty 
                 WHERE propertyfieldid = (
                     SELECT idr
                     FROM dbo.tarPropertyField
@@ -1956,7 +1956,7 @@ BEGIN
             )
             AND ext.idr IN (
                 SELECT extid
-                FROM dbo.m2mextensionproperty
+                FROM dbo.m2mextensionproperty 
                 WHERE propertyfieldid = (
                     SELECT idr
                     FROM dbo.tarPropertyField
@@ -1990,14 +1990,22 @@ BEGIN
                 )
             )
             AND (op.name = ''Сбербанк Телеком(М2М)'' OR op.name = ''МТС (М2М)'')
+            AND ext.idr NOT IN (
+                SELECT extid FROM dbo.aggmobilecalls_' || prev_month_2 || ' WHERE servicetype = ''Интернет''
+                UNION ALL
+                SELECT extid FROM dbo.aggmobilecalls_' || prev_month_1 || ' WHERE servicetype = ''Интернет''
+                UNION ALL
+                SELECT extid FROM dbo.aggmobilecalls_' || current_month || ' WHERE servicetype = ''Интернет''
+            )
     ');
-    
+
     -- Добавьте это перед RETURN QUERY EXECUTE
     RAISE NOTICE 'Executing query: %', query;
 
     RETURN QUERY EXECUTE query;
 END;
 $$;
+
 
 
 
