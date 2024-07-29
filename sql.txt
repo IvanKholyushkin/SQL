@@ -1865,15 +1865,29 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION dbo.test_get_filtered_m2m_data(input_date DATE)
+RETURNS TABLE(
+    operator CHARACTER VARYING,
+    msisdn CHARACTER VARYING,
+    iccid CHARACTER VARYING,
+    m2m_type CHARACTER VARYING,
+    m2m_usemode CHARACTER VARYING,
+    tb CHARACTER VARYING,
+    gosb CHARACTER VARYING,
+    status CHARACTER VARYING,
+    block_date DATE
+) 
+LANGUAGE plpgsql
+AS $$
 DECLARE
     current_month TEXT;
     prev_month_1 TEXT;
     prev_month_2 TEXT;
     query TEXT;
 BEGIN
-    current_month := to_char(current_date, 'YYYYMM');
-    prev_month_1 := to_char(date_trunc('month', current_date) - INTERVAL '1 month', 'YYYYMM');
-    prev_month_2 := to_char(date_trunc('month', current_date) - INTERVAL '2 months', 'YYYYMM');
+    current_month := to_char(input_date, 'YYYYMM');
+    prev_month_1 := to_char(date_trunc('month', input_date) - INTERVAL '1 month', 'YYYYMM');
+    prev_month_2 := to_char(date_trunc('month', input_date) - INTERVAL '2 months', 'YYYYMM');
 
     query := format('
         SELECT
@@ -1919,10 +1933,10 @@ BEGIN
             AND LOWER(p1.valuetext) = LOWER(''в договоре'')
         LEFT JOIN
             (SELECT extid, valuetext
-             FROM dbo.m2mextensionproperty 
+             FROM dbo.m2mextensionproperty
              WHERE propertyfieldid = (
-                 SELECT idr 
-                 FROM dbo.tarPropertyField 
+                 SELECT idr
+                 FROM dbo.tarPropertyField
                  WHERE privatename = ''M2M_ICCID''
              )
              AND dateto > NOW()
@@ -1932,7 +1946,7 @@ BEGIN
         WHERE
             ext.idr NOT IN (
                 SELECT extid
-                FROM dbo.m2mextensionproperty 
+                FROM dbo.m2mextensionproperty
                 WHERE propertyfieldid = (
                     SELECT idr
                     FROM dbo.tarPropertyField
@@ -1942,7 +1956,7 @@ BEGIN
             )
             AND ext.idr IN (
                 SELECT extid
-                FROM dbo.m2mextensionproperty 
+                FROM dbo.m2mextensionproperty
                 WHERE propertyfieldid = (
                     SELECT idr
                     FROM dbo.tarPropertyField
@@ -1984,6 +1998,7 @@ BEGIN
     RETURN QUERY EXECUTE query;
 END;
 $$;
+
 
 
 
