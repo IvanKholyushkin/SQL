@@ -2006,6 +2006,47 @@ BEGIN
 END;
 $$;
 
+def decode_tlv(data):
+    i = 0
+    result = []
+
+    while i < len(data):
+        try:
+            # Чтение тега (предположим, что все теги занимают 2 символа)
+            tag = data[i:i+2]
+            i += 2
+
+            # Чтение длины (предположим, что все длины занимают 2 символа)
+            length = int(data[i:i+2], 16)
+            i += 2
+
+            # Чтение значения, длиной в 'length' байт
+            value = data[i:i+length*2]
+            i += length*2
+
+            # Сохранение декодированной TLV структуры
+            result.append((tag, length, value))
+
+            # Обработка вложенных тегов, если это необходимо
+            if tag.lower() == 'e3' or tag.lower() == 'd2':
+                # Декодирование вложенных TLV
+                nested_result = decode_tlv(value)
+                result.extend(nested_result)
+        except ValueError as e:
+            print(f"Error decoding TLV: {e}")
+            break
+
+    return result
+
+# Пример использования функции
+encoded_str = "d2400241ffffe3020000d202041122334455"
+decoded_tlv = decode_tlv(encoded_str)
+
+for tag, length, value in decoded_tlv:
+    if tag.lower() == 'd2':
+        print(f"ICCID: {value}")
+    else:
+        print(f"Tag: {tag}, Length: {length}, Value: {value}")
 
 
 
