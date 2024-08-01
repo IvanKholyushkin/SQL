@@ -2227,5 +2227,145 @@ WHERE rn = 1;
 DROP TABLE ExcludedIDs;
 DROP TABLE PreliminaryData;
 
+-- Добавляем индексы для ускорения операций JOIN и WHERE
+CREATE INDEX IF NOT EXISTS idx_m2mextension_idr ON dbo.m2mextension (idr);
+CREATE INDEX IF NOT EXISTS idx_taraccounts_id ON dbo.taraccounts (id);
+CREATE INDEX IF NOT EXISTS idx_taroperator_idr ON dbo.taroperator (idr);
+CREATE INDEX IF NOT EXISTS idx_m2mpropgosbtoterbank_extid ON dbo.m2mpropgosbtoterbank (extid);
+CREATE INDEX IF NOT EXISTS idx_catgosbtoterbank_id ON dbo.catgosbtoterbank (id);
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_extid ON dbo.m2mpropsimtypestoterbank (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_dateto ON dbo.m2mpropsimtypestoterbank (dateto);
+CREATE INDEX IF NOT EXISTS idx_mobsimtypesclassestoterbank_idr ON dbo.mobsimtypesclassestoterbank (idr);
+CREATE INDEX IF NOT EXISTS idx_mobsimtypes_id ON dbo.mobsimtypes (id);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_extid ON dbo.m2mextensionproperty (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_propertyfieldid ON dbo.m2mextensionproperty (propertyfieldid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_dateto ON dbo.m2mextensionproperty (dateto);
+
+-- Сам запрос
+WITH LatestEntries AS (
+    SELECT 
+        ext.idr, 
+        ep.valuetext,
+        ROW_NUMBER() OVER (
+            PARTITION BY ext.idr 
+            ORDER BY 
+                CASE 
+                    WHEN position('_', ep.valuetext) > 0 THEN to_date(substring(ep.valuetext, position('_', ep.valuetext) + 1, 10), 'YYYY-MM-DD')
+                    WHEN position(' ', ep.valuetext) > 0 THEN to_date(substring(ep.valuetext, position(' ', ep.valuetext) + 1), 'DD.MM.YYYY')
+                    ELSE NULL
+                END DESC
+        ) AS rn
+    FROM dbo.m2mextensionproperty ep
+    JOIN dbo.m2mextension ext ON ext.idr = ep.extid
+    WHERE ep.propertyfieldid = (
+        SELECT idr 
+        FROM dbo.tarPropertyField
+        WHERE privatename IN ('M2M_USEMODE')
+    )
+)
+SELECT
+    op.name AS operator,
+    ext.ext AS msisdn,
+    iccid.valuetext AS iccid,
+    st.name AS m2m_type,
+    CASE
+        WHEN position('_', le.valuetext) > 0 THEN
+            split_part(le.valuetext, '_', 1) || '_' || substring(le.valuetext, position('_', le.valuetext) + 1, 10)
+        WHEN position(' ', le.valuetext) > 0 THEN
+            split_part(le.valuetext, ' ', 1) || ' ' || substring(le.valuetext, position(' ', le.valuetext) + 1)
+        ELSE
+            le.valuetext
+    END AS m2m_usemode,
+    tb.fullname AS tb,
+    g.name AS gosb,
+    NULL AS status,
+    NULL AS block_date
+FROM
+    dbo.m2mextension ext
+JOIN
+    dbo.taraccounts acc ON ext.accountid = acc.id
+JOIN
+    dbo.taroperator op ON acc.operatorid = op.idr
+JOIN
+    dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid
+JOIN
+    dbo.catgosbtoterbank g ON g.id = gm.gosbtoterbankid
+JOIN
+    dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()
+JOIN
+    dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr
+JOIN
+    dbo.mobsimtypes st ON stc.simtypeid = st.id
+JOIN
+    LatestEntries le ON ext.idr = le.idr AND le.rn = 1
+LEFT JOIN
+    (SELECT extid, valuetext
+     FROM dbo.m2mextensionproperty
+     WHERE propertyfieldid = (
+         SELECT idr
+         FROM dbo.tarPropertyField
+         WHERE privatename = 'M2M_ICCID'
+     )
+     AND dateto > NOW()
+    ) iccid ON ext.idr = iccid.extid
+JOIN
+    dbo.catterbank tb ON tb.id = acc.terbankid
+WHERE
+    ext.idr NOT IN (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = (
+            SELECT idr
+            FROM dbo.tarPropertyField
+            WHERE privatename = 'M2M_DONT_BLOCK'
+        )
+        AND dateto > NOW()
+    )
+    AND ext.idr IN (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = (
+            SELECT idr
+            FROM dbo.tarPropertyField
+            WHERE privatename = 'M2M_STATUS'
+        )
+        AND dateto > NOW()
+        AND valuetext != 'Первоначальная блокировка'
+        AND (valuetext = 'Активен' OR valuetext IS NULL)
+    )
+    AND (
+        (
+            split_part(le.valuetext, ' ', 1) = 'UPOS'
+            AND st.name IN ('POS-терминал', 'SmartPos')
+            AND CASE 
+                WHEN position(' ' IN le.valuetext) > 0 THEN
+                    to_date(substring(le.valuetext, position(' ' IN le.valuetext) + 1), 'DD.MM.YYYY')
+                ELSE
+                    NULL
+            END < date_trunc('month', NOW()) - INTERVAL '2 months'
+        )
+        OR
+        (
+            split_part(le.valuetext, '_', 1) = 'SDWAN'
+            AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+            AND CASE
+                WHEN position('_', le.valuetext) > 0 THEN
+                    to_date(substring(le.valuetext, position('_', le.valuetext) + 1, 10), 'YYYY-MM-DD')
+                ELSE 
+                    NULL
+            END < date_trunc('month', NOW()) - INTERVAL '2 months'
+        )
+    )
+    AND (op.name = 'Сбербанк Телеком(М2М)' OR op.name = 'МТС (М2М)')
+    AND ext.idr NOT IN (
+        SELECT extid FROM dbo.aggmobilecalls_202303 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
+        UNION ALL
+        SELECT extid FROM dbo.aggmobilecalls_202304 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
+        UNION ALL
+        SELECT extid FROM dbo.aggmobilecalls_202305 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
+    );
 
 
