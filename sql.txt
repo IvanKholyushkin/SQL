@@ -2049,6 +2049,96 @@ for tag, length, value in decoded_tlv:
         print(f"Tag: {tag}, Length: {length}, Value: {value}")
 
 
+BEGIN;
+
+-- Создаем временную таблицу для хранения промежуточных результатов
+CREATE TEMP TABLE TempResults AS
+    SELECT
+        op.name AS operator,
+        ext.ext AS msisdn,
+        iccid.valuetext AS iccid,
+        st.name AS m2m_type,
+        CASE
+            WHEN position('_', ep.valuetext) > 0 THEN
+                split_part(ep.valuetext, '_', 1) || '_' || substring(ep.valuetext, position('_', ep.valuetext) + 1, 10)
+            WHEN position(' ', ep.valuetext) > 0 THEN
+                split_part(ep.valuetext, ' ', 1) || ' ' || substring(ep.valuetext, position(' ', ep.valuetext) + 1)
+            ELSE
+                ep.valuetext
+        END AS m2m_usemode,
+        tb.fullname AS tb,
+        g.name AS gosb
+    FROM
+        dbo.m2mextension ext
+    JOIN
+        dbo.taraccounts acc ON ext.accountid = acc.id
+    JOIN
+        dbo.taroperator op ON acc.operatorid = op.idr
+    JOIN
+        dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid
+    JOIN
+        dbo.catgosbtoterbank g ON g.id = gm.gosbtoterbankid
+    JOIN
+        dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()
+    JOIN
+        dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr
+    JOIN
+        dbo.mobsimtypes st ON stc.simtypeid = st.id
+    JOIN
+        dbo.m2mextensionproperty ep ON ext.idr = ep.extid
+    JOIN
+        dbo.m2mextensionproperty p1 ON ext.idr = p1.extid AND p1.propertyfieldid = (
+            SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_SIM_STATUS_CONTRACT'
+        )
+        AND p1.dateto > NOW()
+        AND LOWER(p1.valuetext) = 'в договоре'
+    LEFT JOIN
+        (SELECT extid, valuetext
+         FROM dbo.m2mextensionproperty
+         WHERE propertyfieldid = (
+             SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_ICCID'
+         )
+         AND dateto > NOW()
+        ) iccid ON ext.idr = iccid.extid
+    JOIN
+        dbo.catterbank tb ON tb.id = acc.terbankid
+    WHERE
+        ext.idr NOT IN (
+            SELECT extid FROM dbo.m2mextensionproperty WHERE propertyfieldid = (
+                SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_DONT_BLOCK'
+            ) AND dateto > NOW()
+        )
+        AND ext.idr IN (
+            SELECT extid FROM dbo.m2mextensionproperty WHERE propertyfieldid = (
+                SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_STATUS'
+            ) AND dateto > NOW() AND (valuetext = 'Активен' OR valuetext IS NULL)
+        );
+
+-- Отфильтровываем записи без интернет трафика за последние месяцы
+DELETE FROM TempResults
+WHERE msisdn IN (
+    SELECT extid FROM dbo.aggmobilecalls_202303 WHERE servicetype = 'Интернет'
+    UNION ALL
+    SELECT extid FROM dbo.aggmobilecalls_202304 WHERE servicetype = 'Интернет'
+    UNION ALL
+    SELECT extid FROM dbo.aggmobilecalls_202305 WHERE servicetype = 'Интернет'
+);
+
+-- Возвращаем результаты с последними датами m2m_usemode для каждого msisdn
+SELECT
+    operator,
+    msisdn,
+    iccid,
+    m2m_type,
+    m2m_usemode,
+    tb,
+    gosb
+FROM TempResults tr1
+WHERE m2m_usemode = (
+    SELECT MAX(m2m_usemode) FROM TempResults tr2 WHERE tr2.msisdn = tr1.msisdn AND tr2.m2m_type = tr1.m2m_type
+);
+
+COMMIT;
 
 
 
