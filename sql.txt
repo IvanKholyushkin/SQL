@@ -1,4 +1,4 @@
-SELECT 
+тоSELECT 
     ext.ext,
     CASE 
         WHEN position('_' IN ext.remark) > 0 THEN
@@ -2140,7 +2140,92 @@ WHERE m2m_usemode = (
 
 COMMIT;
 
+-- Создание временной таблицы для исключенных ID из-за интернет-трафика
+CREATE TEMP TABLE ExcludedIDs AS
+SELECT extid
+FROM (
+    SELECT extid FROM dbo.aggmobilecalls_202303 WHERE servicetype = 'Интернет'
+    UNION ALL
+    SELECT extid FROM dbo.aggmobilecalls_202304 WHERE servicetype = 'Интернет'
+    UNION ALL
+    SELECT extid FROM dbo.aggmobilecalls_202305 WHERE servicetype = 'Интернет'
+) AS Traffic
+WHERE operator IN ('Сбербанк Телеком', 'МТС (М2М)');
 
+-- Создание основной временной таблицы с предварительными данными
+CREATE TEMP TABLE PreliminaryData AS
+SELECT
+    op.name AS operator,
+    ext.ext AS msisdn,
+    iccid.valuetext AS iccid,
+    st.name AS m2m_type,
+    CASE
+        WHEN position('_', ep.valuetext) > 0 THEN
+            split_part(ep.valuetext, '_', 1) || '_' || substring(ep.valuetext, position('_', ep.valuetext) + 1, 10)
+        WHEN position(' ', ep.valuetext) > 0 THEN
+            split_part(ep.valuetext, ' ', 1) || ' ' || substring(ep.valuetext, position(' ', ep.valuetext) + 1)
+        ELSE
+            ep.valuetext
+    END AS m2m_usemode,
+    tb.fullname AS tb,
+    g.name AS gosb
+FROM
+    dbo.m2mextension ext
+JOIN
+    dbo.taraccounts acc ON ext.accountid = acc.id
+JOIN
+    dbo.taroperator op ON acc.operatorid = op.idr
+JOIN
+    dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid
+JOIN
+    dbo.catgosbtoterbank g ON g.id = gm.gosbtoterbankid
+JOIN
+    dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()
+JOIN
+    dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr
+JOIN
+    dbo.mobsimtypes st ON stc.simtypeid = st.id
+JOIN
+    dbo.m2mextensionproperty ep ON ext.idr = ep.extid
+JOIN
+    dbo.m2mextensionproperty p1 ON ext.idr = p1.extid AND p1.propertyfieldid = (
+        SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_SIM_STATUS_CONTRACT'
+    )
+    AND p1.dateto > NOW()
+    AND LOWER(p1.valuetext) = 'в договоре'
+LEFT JOIN
+    (SELECT extid, valuetext FROM dbo.m2mextensionproperty WHERE propertyfieldid = (
+        SELECT idr FROM dbo.tarPropertyField WHERE privatename = 'M2M_ICCID') AND dateto > NOW()
+    ) iccid ON ext.idr = iccid.extid
+JOIN
+    dbo.catterbank tb ON tb.id = acc.terbankid
+WHERE
+    ext.idr NOT IN (SELECT extid FROM ExcludedIDs);
+
+-- Выборка окончательных данных, учитывая только последние даты UPOS или SDWAN
+SELECT
+    operator,
+    msisdn,
+    iccid,
+    m2m_type,
+    m2m_usemode,
+    tb,
+    gosb,
+    status,
+    block_date
+FROM (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY msisdn, m2m_type ORDER BY CASE
+               WHEN position('_', m2m_usemode) > 0 THEN to_date(substring(m2m_usemode, position('_', m2m_usemode) + 1, 10), 'YYYY-MM-DD')
+               WHEN position(' ', m2m_usemode) > 0 THEN to_date(substring(m2m_usemode, position(' ', m2m_usemode) + 1), 'DD.MM.YYYY')
+               ELSE NULL END DESC) AS rn
+    FROM PreliminaryData
+) ranked
+WHERE rn = 1;
+
+-- Опциональное удаление временных таблиц, если необходимо
+DROP TABLE ExcludedIDs;
+DROP TABLE PreliminaryData;
 
 
 
