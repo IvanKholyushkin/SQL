@@ -2369,48 +2369,56 @@ WHERE
     );
 
 import base64
+import struct
+from datetime import datetime, timedelta
 
-# Пример строки Base64, которую нужно декодировать
-encoded_data = "BASE64_ENCODED_DATA_HERE"
-decoded_data = base64.b64decode(encoded_data)
+# Декодирование строки Base64
+encoded_str = "wQgyNDYNjAzOcIBBM8EElcCQdoBAMMJzUACQf\/\/AgAAwwk8QgJB\/\/8CAADDCRRFAkH\/\/wIAAMMJfEUCQf\/\/..."
+decoded_data = base64.b64decode(encoded_str)
 
-def parse_data(data):
+def parse_tagm_events(data):
     index = 0
-    result = {}
+    events = []
     while index < len(data):
-        tag_id = data[index]
-        index += 1
-        length = data[index]
-        index += 1
-        value = data[index:index + length]
-        index += length
-        result[tag_id] = value
-    return result
+        if data[index] == 0xC3:  # Проверка начала блока TAGM_EVENTS
+            index += 1
+            # Парсим данные TAGM_EVENTS
+            timestamp = struct.unpack('<I', data[index:index+4])[0]
+            start_time = datetime(1970, 1, 1) + timedelta(seconds=timestamp)
+            index += 4
+            
+            op_to_conn_sec = data[index]
+            index += 1
+            conn_to_end_sec = data[index]
+            index += 1
+            op_to_end_sec = data[index]
+            index += 1
 
-def interpret_tags(tags):
-    info = {
-        'IMEI': '',
-        'ICCID': '',
-        'Transaction Date': '',
-        'Device Model Type': '',
-        'Device Model': ''
-    }
-    for tag, value in tags.items():
-        if tag == 0xD1:  # IMEI
-            info['IMEI'] = value.decode('ascii')
-        elif tag == 0xD2:  # ICCID
-            info['ICCID'] = value.decode('ascii')
-        elif tag == 0xDD:  # Transaction Date
-            # Предположим, что дата представлена в формате timestamp
-            transaction_date = int.from_bytes(value, byteorder='little')
-            info['Transaction Date'] = transaction_date
-        elif tag == 0xC4:  # Device Model Type
-            info['Device Model Type'] = value.decode('ascii')
-        elif tag == 0xC5:  # Device Model
-            info['Device Model'] = value.decode('ascii')
-    return info
+            # Результат операции
+            operation_result = struct.unpack('<H', data[index:index+2])[0]
+            index += 2
 
-tags = parse_data(decoded_data)
-device_info = interpret_tags(tags)
-print(device_info)
+            # Добавление информации о событии
+            events.append({
+                "Transaction Date": start_time,
+                "Op to Conn Sec": op_to_conn_sec,
+                "Conn to End Sec": conn_to_end_sec,
+                "Op to End Sec": op_to_end_sec,
+                "Operation Result": operation_result
+            })
+        else:
+            index += 1
+    return events
+
+# Разбор событий
+events = parse_tagm_events(decoded_data)
+
+# Вывод информации о событиях
+for event in events:
+    print("Transaction Date:", event["Transaction Date"])
+    print("Op to Conn Sec:", event["Op to Conn Sec"])
+    print("Conn to End Sec:", event["Conn to End Sec"])
+    print("Op to End Sec:", event["Op to End Sec"])
+    print("Operation Result:", event["Operation Result"])
+    print("-" * 40)
 
