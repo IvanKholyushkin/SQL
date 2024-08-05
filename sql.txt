@@ -2368,4 +2368,28 @@ WHERE
         AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
     );
 
+def parse_tags(data):
+    index = 0
+    tags = {}
+    while index < len(data):
+        tag_id = data[index]  # Тег ID, предположим, что это один байт
+        length = data[index + 1]  # Длина данных тега, предположим, что это тоже один байт
+        value = data[index + 2 : index + 2 + length]  # Данные тега
+        tags[tag_id] = value
+        index += 2 + length
+    return tags
+
+parsed_tags = parse_tags(decoded_data)
+
+def interpret_tag_values(tags):
+    interpreted_tags = {}
+    for tag_id, value in tags.items():
+        if tag_id == TAGM_DEVTYPE:  # Используйте реальные ID тегов из вашей документации
+            device_type = int.from_bytes(value, byteorder='little')  # Преобразование из байтов в int
+            interpreted_tags['Device Type'] = device_type
+        # Добавьте дополнительные условия для других тегов
+    return interpreted_tags
+
+interpreted_data = interpret_tag_values(parsed_tags)
+print(interpreted_data)
 
