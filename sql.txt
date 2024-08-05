@@ -2368,31 +2368,46 @@ WHERE
         AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
     );
 
+import base64
+import struct
+from datetime import datetime, timedelta
+
+encoded_str = "BASE64_ENCODED_STRING_HERE"
+decoded_data = base64.b64decode(encoded_str)
+
 def parse_tagm_events(data):
     index = 0
     events = []
-    while index < len(data):
-        if data[index] == 0xC3:  # Предполагаем, что 0xC3 это начало TAGM_EVENTS
-            length = int.from_bytes(data[index+1:index+3], 'little')  # Длина данных
-            event_data = data[index+3:index+3+length]
-            # Допустим, структура event_data такова:
-            # - первые 4 байта - TIMESTAMP (unix time)
-            # - следующие данные - информация о событии
-            timestamp = int.from_bytes(event_data[:4], 'little')
-            event_info = event_data[4:]
-            events.append((timestamp, event_info))
-            index += 3 + length
-        else:
+    while index + 10 <= len(data):  # Убедимся, что осталось достаточно данных для разбора
+        tag = data[index]
+        if tag == 0xC3:
             index += 1
+            length = data[index]  # Предполагаем, что длина содержится в следующем байте
+            index += 1
+            if index + length > len(data):  # Проверка на выход за пределы массива
+                break
+            if length >= 10:  # Убедимся, что длина достаточна для всех полей
+                timestamp = struct.unpack('<I', data[index:index+4])[0]
+                date = datetime(1970, 1, 1) + timedelta(seconds=timestamp)
+                op_to_conn_sec = data[index+4]
+                conn_to_end_sec = data[index+5]
+                op_to_end_sec = data[index+6]
+                operation_result = struct.unpack('<H', data[index+8:index+10])[0]
+                events.append({
+                    "Transaction Date": date,
+                    "Op to Conn Sec": op_to_conn_sec,
+                    "Conn to End Sec": conn_to_end_sec,
+                    "Op to End Sec": op_to_end_sec,
+                    "Operation Result": operation_result
+                })
+                index += length
+            else:
+                index += length  # Пропускаем недостаточно большие блоки данных
+        else:
+            index += 1  # Перемещение к следующему тегу
     return events
 
-# Декодирование данных
-decoded_data = base64.b64decode(encoded_str)
-
-# Разбор событий
 events = parse_tagm_events(decoded_data)
-
-# Интерпретация и вывод информации о событиях
 for event in events:
-    timestamp, info = event
-    print("Event Time:", timestamp, "Event Info:", info)
+    print(event)
+
