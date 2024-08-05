@@ -2369,8 +2369,7 @@ WHERE
     );
 
 import base64
-import struct
-from datetime import datetime, timedelta
+from datetime import datetime
 
 encoded_str = "BASE64_ENCODED_STRING_HERE"
 decoded_data = base64.b64decode(encoded_str)
@@ -2378,36 +2377,27 @@ decoded_data = base64.b64decode(encoded_str)
 def parse_tagm_events(data):
     index = 0
     events = []
-    while index + 10 <= len(data):  # Убедимся, что осталось достаточно данных для разбора
-        tag = data[index]
-        if tag == 0xC3:
+    while index + 9 <= len(data):  # Убедимся, что в буфере достаточно данных для разбора события
+        if data[index] == 0xC3:  # Проверка начала блока TAGM_EVENTS
             index += 1
-            length = data[index]  # Предполагаем, что длина содержится в следующем байте
-            index += 1
-            if index + length > len(data):  # Проверка на выход за пределы массива
-                break
-            if length >= 10:  # Убедимся, что длина достаточна для всех полей
-                timestamp = struct.unpack('<I', data[index:index+4])[0]
-                date = datetime(1970, 1, 1) + timedelta(seconds=timestamp)
-                op_to_conn_sec = data[index+4]
-                conn_to_end_sec = data[index+5]
-                op_to_end_sec = data[index+6]
-                operation_result = struct.unpack('<H', data[index+8:index+10])[0]
-                events.append({
-                    "Transaction Date": date,
-                    "Op to Conn Sec": op_to_conn_sec,
-                    "Conn to End Sec": conn_to_end_sec,
-                    "Op to End Sec": op_to_end_sec,
-                    "Operation Result": operation_result
-                })
-                index += length
-            else:
-                index += length  # Пропускаем недостаточно большие блоки данных
+            # Предположим, что первые 4 байта — это временная метка
+            timestamp = int.from_bytes(data[index:index+4], 'little')
+            date = datetime(1970, 1, 1) + timedelta(seconds=timestamp)
+            index += 4
+            # Оставшиеся 5 байт — данные о событии
+            event_data = data[index:index+5]
+            index += 5
+            events.append({
+                "Transaction Date": date,
+                "Event Data": event_data.hex()
+            })
         else:
-            index += 1  # Перемещение к следующему тегу
+            index += 1
     return events
 
 events = parse_tagm_events(decoded_data)
 for event in events:
-    print(event)
+    print("Transaction Date:", event["Transaction Date"])
+    print("Event Data:", event["Event Data"])
+
 
