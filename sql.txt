@@ -2372,29 +2372,29 @@ import base64
 from datetime import datetime, timedelta
 import struct
 
-# Здесь должна быть ваша закодированная строка Base64
 encoded_data = "BASE64_ENCODED_STRING_HERE"
 decoded_data = base64.b64decode(encoded_data)
 
 def parse_tagm_events(data):
     events = []
     index = 0
-    while index + 9 <= len(data):  # Проверяем, что у нас есть достаточно данных для одного события
+    while index + 9 <= len(data):  # Убедимся, что в буфере достаточно данных для одного события
         # Извлекаем дату и время
         packed_time = struct.unpack('<I', data[index:index+4])[0]
         transaction_date = datetime(1970, 1, 1) + timedelta(seconds=packed_time)
         index += 4
         
         # Извлекаем временные интервалы
-        op_to_conn_sec = data[index]
+        op_to_conn_sec = data[index] if data[index] != 0xFF and data[index] != 0xFE else None
         index += 1
-        conn_to_end_sec = data[index]
+        conn_to_end_sec = data[index] if data[index] != 0xFF and data[index] != 0xFE else None
         index += 1
-        op_to_end_sec = data[index]
+        op_to_end_sec = data[index] if data[index] != 0xFF and data[index] != 0xFE else None
         index += 1
         
         # Извлекаем результат операции
-        result = struct.unpack('<H', data[index:index+2])[0]
+        result_bytes = data[index:index+2]
+        operation_result = struct.unpack('<H', result_bytes)[0] if any(result_bytes) else None
         index += 2
         
         # Добавляем собранную информацию в список событий
@@ -2403,7 +2403,7 @@ def parse_tagm_events(data):
             "Op to Conn Sec": op_to_conn_sec,
             "Conn to End Sec": conn_to_end_sec,
             "Op to End Sec": op_to_end_sec,
-            "Operation Result": result
+            "Operation Result": operation_result
         })
 
     return events
@@ -2419,6 +2419,7 @@ for event in parsed_events:
     print(f"Op to End Sec: {event['Op to End Sec']}")
     print(f"Operation Result: {event['Operation Result']}")
     print("-" * 40)
+
 
 
 
