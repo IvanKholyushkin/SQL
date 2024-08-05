@@ -2457,6 +2457,17 @@ AND (
     )
 )
 
-
+CREATE INDEX IF NOT EXISTS idx_m2mextension_idr ON dbo.m2mextension (idr);
+CREATE INDEX IF NOT EXISTS idx_taraccounts_id ON dbo.taraccounts (id);
+CREATE INDEX IF NOT EXISTS idx_taroperator_idr ON dbo.taroperator (idr);
+CREATE INDEX IF NOT EXISTS idx_m2mpropgosbtoterbank_extid ON dbo.m2mpropgosbtoterbank (extid);
+CREATE INDEX IF NOT EXISTS idx_catgosbtoterbank_id ON dbo.catgosbtoterbank (id);
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_extid ON dbo.m2mpropsimtypestoterbank (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_dateto ON dbo.m2mpropsimtypestoterbank (dateto);
+CREATE INDEX IF NOT EXISTS idx_mobsimtypesclassestoterbank_idr ON dbo.mobsimtypesclassestoterbank (idr);
+CREATE INDEX IF NOT EXISTS idx_mobsimtypes_id ON dbo.mobsimtypes (id);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_extid ON dbo.m2mextensionproperty (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_propertyfieldid ON dbo.m2mextensionproperty (propertyfieldid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_dateto ON dbo.m2mextensionproperty (dateto);
 
 
