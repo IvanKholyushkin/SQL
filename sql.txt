@@ -2368,28 +2368,49 @@ WHERE
         AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (М2М)')
     );
 
-def parse_tags(data):
+import base64
+
+# Пример строки Base64, которую нужно декодировать
+encoded_data = "BASE64_ENCODED_DATA_HERE"
+decoded_data = base64.b64decode(encoded_data)
+
+def parse_data(data):
     index = 0
-    tags = {}
+    result = {}
     while index < len(data):
-        tag_id = data[index]  # Тег ID, предположим, что это один байт
-        length = data[index + 1]  # Длина данных тега, предположим, что это тоже один байт
-        value = data[index + 2 : index + 2 + length]  # Данные тега
-        tags[tag_id] = value
-        index += 2 + length
-    return tags
+        tag_id = data[index]
+        index += 1
+        length = data[index]
+        index += 1
+        value = data[index:index + length]
+        index += length
+        result[tag_id] = value
+    return result
 
-parsed_tags = parse_tags(decoded_data)
+def interpret_tags(tags):
+    info = {
+        'IMEI': '',
+        'ICCID': '',
+        'Transaction Date': '',
+        'Device Model Type': '',
+        'Device Model': ''
+    }
+    for tag, value in tags.items():
+        if tag == 0xD1:  # IMEI
+            info['IMEI'] = value.decode('ascii')
+        elif tag == 0xD2:  # ICCID
+            info['ICCID'] = value.decode('ascii')
+        elif tag == 0xDD:  # Transaction Date
+            # Предположим, что дата представлена в формате timestamp
+            transaction_date = int.from_bytes(value, byteorder='little')
+            info['Transaction Date'] = transaction_date
+        elif tag == 0xC4:  # Device Model Type
+            info['Device Model Type'] = value.decode('ascii')
+        elif tag == 0xC5:  # Device Model
+            info['Device Model'] = value.decode('ascii')
+    return info
 
-def interpret_tag_values(tags):
-    interpreted_tags = {}
-    for tag_id, value in tags.items():
-        if tag_id == TAGM_DEVTYPE:  # Используйте реальные ID тегов из вашей документации
-            device_type = int.from_bytes(value, byteorder='little')  # Преобразование из байтов в int
-            interpreted_tags['Device Type'] = device_type
-        # Добавьте дополнительные условия для других тегов
-    return interpreted_tags
-
-interpreted_data = interpret_tag_values(parsed_tags)
-print(interpreted_data)
+tags = parse_data(decoded_data)
+device_info = interpret_tags(tags)
+print(device_info)
 
