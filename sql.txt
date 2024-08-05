@@ -2417,6 +2417,45 @@ for event in parsed_events:
 
 
 
+AND (
+    (
+        split_part(ep.valuetext, ' ', 1) = 'UPOS'
+        AND st.name IN ('POS-терминал', 'SmartPos')
+        AND CASE 
+            WHEN position(' ' IN ep.valuetext) > 0 THEN
+                -- Извлечение подстроки даты и проверка ее корректности перед преобразованием
+                CASE 
+                    WHEN substring(ep.valuetext, position(' ' IN ep.valuetext) + 1) ~ '^\d{2}\.\d{2}\.\d{4}$' THEN
+                        to_date(substring(ep.valuetext, position(' ' IN ep.valuetext) + 1), 'DD.MM.YYYY')
+                    ELSE
+                        NULL
+                END
+            ELSE
+                NULL
+        END < date_trunc('month', NOW()) - INTERVAL '2 months'
+    )
+    OR
+    (
+        -- Проверяем новые форматы, такие как "SDWANprop_2023-08-05"
+        (
+            split_part(ep.valuetext, '_', 1) = 'SDWAN' 
+            OR split_part(ep.valuetext, '_', 1) LIKE 'SDWAN%'
+        )
+        AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+        AND CASE
+            WHEN position('_' IN ep.valuetext) > 0 THEN
+                -- Извлечение подстроки даты и проверка ее корректности перед преобразованием
+                CASE 
+                    WHEN substring(ep.valuetext, position('_' IN ep.valuetext) + 1, 10) ~ '^\d{4}-\d{2}-\d{2}$' THEN
+                        to_date(substring(ep.valuetext, position('_' IN ep.valuetext) + 1, 10), 'YYYY-MM-DD')
+                    ELSE 
+                        NULL
+                END
+            ELSE 
+                NULL
+        END < date_trunc('month', NOW()) - INTERVAL '2 months'
+    )
+)
 
 
 
