@@ -2471,3 +2471,30 @@ CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_propertyfieldid ON dbo.m2mex
 CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_dateto ON dbo.m2mextensionproperty (dateto);
 
 
+AND (
+    -- Обработка SDWAN с любым префиксом
+    split_part(ep.valuetext, '_', 1) = 'SDWAN'
+    AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+    AND CASE
+        WHEN position('_' IN ep.valuetext) > 0 
+             AND substring(ep.valuetext, position('_' IN ep.valuetext) + 1) SIMILAR TO '%[0-9]{4}-[0-9]{2}-[0-9]{2}%'
+        THEN
+            to_date(substring(regexp_replace(ep.valuetext, '.*_([0-9]{4}-[0-9]{2}-[0-9]{2}).*', '\1'), 1, 10), 'YYYY-MM-DD')
+        ELSE 
+            NULL
+    END < date_trunc('month', NOW()) - INTERVAL '2 months'
+)
+OR
+(
+    -- Обработка UPOS с любым префиксом
+    split_part(ep.valuetext, ' ', 1) = 'UPOS'
+    AND st.name IN ('POS-терминал', 'SmartPos')
+    AND CASE 
+        WHEN position(' ' IN ep.valuetext) > 0 
+             AND substring(ep.valuetext, position(' ' IN ep.valuetext) + 1) SIMILAR TO '%[0-9]{2}\.[0-9]{2}\.[0-9]{4}%'
+        THEN
+            to_date(substring(regexp_replace(ep.valuetext, '.* ([0-9]{2}\.[0-9]{2}\.[0-9]{4}).*', '\1'), 1), 'DD.MM.YYYY')
+        ELSE
+            NULL
+    END < date_trunc('month', NOW()) - INTERVAL '2 months'
+)
