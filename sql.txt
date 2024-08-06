@@ -2646,3 +2646,27 @@ BEGIN
 END;
 $$;
 
+import base64
+import struct
+from datetime import datetime, timedelta
+
+# Пример декодированной строки в байтах, замените на вашу декодированную строку
+data = b"\xc1...байты...b'\xc3\xd0\x1c\x2a\x1e...байты...b'\xc3\x2a\x1c\xd0\x1c"
+
+# Ищем последнюю дату в тегах 0xC3
+index = 0
+latest_date = datetime.min
+
+while index < len(data) - 4:
+    if data[index] == 0xc3:
+        # Считываем 4 байта начиная с index + 1, интерпретируем как DWORD в little-endian
+        packed_date = data[index + 1:index + 5]
+        timestamp = struct.unpack('<I', packed_date)[0]
+        # Преобразуем UNIX timestamp в datetime
+        date = datetime(1970, 1, 1) + timedelta(seconds=timestamp)
+        if date > latest_date:
+            latest_date = date
+        index += 5  # Перемещаем индекс за прочитанные данные
+    index += 1
+
+print("Последняя дата пинга:", latest_date if latest_date != datetime.min else "не найдена")
