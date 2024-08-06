@@ -2498,3 +2498,151 @@ OR
             NULL
     END < date_trunc('month', NOW()) - INTERVAL '2 months'
 )
+
+CREATE OR REPLACE FUNCTION dbo.test_get_filtered_m2m_data(input_date DATE)
+RETURNS TABLE(
+    operator CHARACTER VARYING,
+    msisdn CHARACTER VARYING,
+    iccid CHARACTER VARYING,
+    m2m_type CHARACTER VARYING,
+    m2m_usemode CHARACTER VARYING,
+    tb CHARACTER VARYING,
+    gosb CHARACTER VARYING,
+    status CHARACTER VARYING,
+    block_date DATE
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    current_month TEXT;
+    prev_month_1 TEXT;
+    prev_month_2 TEXT;
+BEGIN
+    -- Вычисляем текущий месяц и два предыдущих на основе input_date
+    current_month := to_char(input_date, 'YYYYMM');
+    prev_month_1 := to_char(input_date - INTERVAL '1 month', 'YYYYMM');
+    prev_month_2 := to_char(input_date - INTERVAL '2 months', 'YYYYMM');
+
+    RETURN QUERY EXECUTE format($f$
+        WITH PreData AS (
+            SELECT
+                op.name AS operator,
+                ext.ext AS msisdn,
+                iccid.valuetext AS iccid,
+                st.name AS m2m_type,
+                CASE
+                    WHEN position('_' IN ep.valuetext) > 0 THEN
+                        split_part(ep.valuetext, '_', 1) || '_' || substring(ep.valuetext, position('_' IN ep.valuetext) + 1, 10)
+                    ELSE
+                        ep.valuetext
+                END AS m2m_usemode,
+                tb.fullname AS tb,
+                g.name AS gosb,
+                NULL::CHARACTER VARYING AS status,
+                NULL::DATE AS block_date
+            FROM
+                dbo.m2mextension ext
+            JOIN
+                dbo.taraccounts acc ON ext.accountid = acc.id
+            JOIN
+                dbo.taroperator op ON acc.operatorid = op.idr
+            JOIN
+                dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid
+            JOIN
+                dbo.catgosbtoterbank g ON g.id = gm.gosbtoterbankid
+            JOIN
+                dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()
+            JOIN
+                dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr
+            JOIN
+                dbo.mobsimtypes st ON stc.simtypeid = st.id
+            JOIN
+                dbo.m2mextensionproperty ep ON ext.idr = ep.extid
+            JOIN
+                dbo.m2mextensionproperty p1 ON ext.idr = p1.extid
+                AND p1.propertyfieldid = 2110
+                AND p1.dateto > NOW()
+                AND LOWER(p1.valuetext) = 'в договоре'
+            LEFT JOIN (
+                SELECT extid, valuetext
+                FROM dbo.m2mextensionproperty
+                WHERE propertyfieldid = 2052
+                AND dateto > NOW()
+            ) iccid ON ext.idr = iccid.extid
+            JOIN
+                dbo.catterbank tb ON tb.id = acc.terbankid
+            WHERE
+                ext.idr NOT IN (
+                    SELECT extid
+                    FROM dbo.m2mextensionproperty
+                    WHERE propertyfieldid = 2118
+                    AND dateto > NOW()
+                )
+            AND ext.idr IN (
+                SELECT extid
+                FROM dbo.m2mextensionproperty
+                WHERE propertyfieldid = 2040
+                AND valuetext <> 'Первоначальная блокировка'
+                AND (valuetext = 'Активен' OR valuetext IS NULL)
+                AND dateto > NOW()
+            )
+            AND (
+                (
+                    split_part(ep.valuetext, '_', 1) = 'SDWAN' AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+                    AND CASE 
+                        WHEN position('_' IN ep.valuetext) > 0 
+                        AND substring(ep.valuetext, position('_' IN ep.valuetext) + 1) SIMILAR TO '%[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                        THEN
+                        to_date(substring(regexp_replace(ep.valuetext, '.*_([0-9]{4}-[0-9]{2}-[0-9]{2}).*', '\1'), 1, 10), 'YYYY-MM-DD')  
+                        ELSE NULL 
+                    END < date_trunc('month', $1) - INTERVAL '2 months'
+                )
+                OR (
+                    split_part(ep.valuetext, ' ', 1) = 'UPOS' AND st.name IN ('POS-терминал', 'SmartPos')
+                    AND CASE 
+                        WHEN position(' ' IN ep.valuetext) > 0 
+                        AND substring(ep.valuetext, position(' ' IN ep.valuetext) + 1) SIMILAR TO '%[0-9]{2}\.[0-9]{2}\.[0-9]{4}' 
+                        THEN
+                        to_date(substring(regexp_replace(ep.valuetext, '.* ([0-9]{2}\.[0-9]{2}\.[0-9]{4}).*', '\1'), 1), 'DD.MM.YYYY')  
+                        ELSE NULL 
+                    END < date_trunc('month', $1) - INTERVAL '2 months'
+                )
+            )
+            AND (op.name = 'Сбербанк Телеком(M2M)' OR op.name = 'МТС (M2M)')
+            AND ext.idr NOT IN (
+                SELECT extid FROM dbo.aggmobilecalls_%1$s WHERE servicetype = 'Интернет'
+                AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+                UNION ALL
+                SELECT extid FROM dbo.aggmobilecalls_%2$s WHERE servicetype = 'Интернет'
+                AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+                UNION ALL
+                SELECT extid FROM dbo.aggmobilecalls_%3$s WHERE servicetype = 'Интернет'
+                AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+            )                    
+        )
+        SELECT
+            operator,
+            msisdn,
+            iccid,
+            m2m_type,
+            m2m_usemode,
+            tb,
+            gosb,
+            status,
+            block_date
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY msisdn, m2m_type ORDER BY
+                      CASE 
+                          WHEN position('_' IN m2m_usemode) > 0 THEN to_date(substring(m2m_usemode, position('_' IN m2m_usemode) + 1, 10), 'YYYY-MM-DD')
+                          WHEN position(' ' IN m2m_usemode) > 0 THEN to_date(substring(m2m_usemode, position(' ' IN m2m_usemode) + 1), 'DD.MM.YYYY')
+                          ELSE NULL 
+                      END DESC 
+                    ) AS rn 
+            FROM PreData          
+        ) ranked
+        WHERE rn = 1;
+    $f$, current_month, prev_month_1, prev_month_2);
+END;
+$$;
+
