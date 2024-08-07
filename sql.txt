@@ -2876,3 +2876,125 @@ WHERE
     extp2.propertyfieldid = 2052 
     AND extp2.dateto > NOW();
 
+_________________________________________не получаем физическую таблицу
+CREATE OR ALTER FUNCTION dbo.GetAllM2MData()
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH ValidContracts AS (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = 2110 
+          AND LOWER(valuetext) = 'в договоре'
+          AND dateto > NOW()
+    ),
+    ActiveStatus AS (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = 2040 
+          AND valuetext <> 'Первоначальная блокировка'
+          AND (valuetext = 'Активен' OR valuetext IS NULL)
+          AND dateto > NOW()
+    ),
+    BlockedExclusion AS (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = 2118 
+          AND dateto > NOW()
+    )
+    SELECT 
+        extp2.valuetext AS m2m_identifier,
+        CASE 
+            WHEN extp2.extid IN (SELECT extid FROM ValidContracts)
+                 AND extp2.extid IN (SELECT extid FROM ActiveStatus)
+                 AND extp2.extid NOT IN (SELECT extid FROM BlockedExclusion)
+            THEN 1
+            ELSE 0
+        END AS may_be_blocked,
+        NULL AS sdman_check,
+        NULL AS upos_check,
+        NULL AS agg_mob_pack_check,
+        NULL AS agg_mob_traf_check,
+        NULL AS last_active_date,
+        NULL AS block_status,
+        NULL AS success_block_date
+    FROM 
+        dbo.m2mextensionproperty extp2
+    WHERE 
+        extp2.propertyfieldid = 2052 
+        AND extp2.dateto > GETDATE();
+);
+Использование функции
+После создания функции GetAllM2MData, вы можете получить данные, выполняя:
+
+sql
+Копировать код
+SELECT * FROM dbo.GetAllM2MData();
+___________________________________________________физ таблица
+
+-- Удаляем таблицу, если она уже существует, чтобы избежать ошибки при создании
+IF OBJECT_ID('dbo.M2MDataTable', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE dbo.M2MDataTable;
+END
+
+-- Создаем новую таблицу с заданными столбцами
+CREATE TABLE dbo.M2MDataTable (
+    m2m_identifier VARCHAR(255),
+    may_be_blocked BIT,
+    sdman_check BIT,
+    upos_check BIT,
+    agg_mob_pack_check BIT,
+    agg_mob_traf_check BIT,
+    last_active_date DATETIME,
+    block_status INT,
+    success_block_date DATETIME
+);
+
+-- Общие табличные выражения для фильтрации данных
+WITH ValidContracts AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2110 
+      AND LOWER(valuetext) = 'в договоре'
+      AND dateto > NOW()
+),
+ActiveStatus AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2040 
+      AND valuetext <> 'Первоначальная блокировка'
+      AND (valuetext = 'Активен' OR valuetext IS NULL)
+      AND dateto > NOW()
+),
+BlockedExclusion AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2118 
+      AND dateto > NOW()
+)
+
+-- Вставляем данные в созданную таблицу
+INSERT INTO dbo.M2MDataTable (m2m_identifier, may_be_blocked, sdman_check, upos_check, agg_mob_pack_check, agg_mob_traf_check, last_active_date, block_status, success_block_date)
+SELECT 
+    extp2.valuetext AS m2m_identifier,
+    CASE 
+        WHEN extp2.extid IN (SELECT extid FROM ValidContracts)
+             AND extp2.extid IN (SELECT extid FROM ActiveStatus)
+             AND extp2.extid NOT IN (SELECT extid FROM BlockedExclusion)
+        THEN 1
+        ELSE 0
+    END AS may_be_blocked,
+    NULL AS sdman_check,
+    NULL AS upos_check,
+    NULL AS agg_mob_pack_check,
+    NULL AS agg_mob_traf_check,
+    NULL AS last_active_date,
+    NULL AS block_status,
+    NULL AS success_block_date
+FROM 
+    dbo.m2mextensionproperty extp2
+WHERE 
+    extp2.propertyfieldid = 2052 
+    AND extp2.dateto > NOW();
