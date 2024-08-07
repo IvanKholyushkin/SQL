@@ -2741,3 +2741,138 @@ WHERE
     AND extp_main.dateto > NOW()
     AND extp.propertyfield = 2110
     AND extp.dateto > NOW();
+
+________________var1
+WITH ValidContracts AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2110 
+      AND LOWER(valuetext) = 'в договоре'
+      AND dateto > NOW()
+),
+ActiveStatus AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2040 
+      AND valuetext <> 'Первоначальная блокировка'
+      AND (valuetext = 'Активен' OR valuetext IS NULL)
+      AND dateto > NOW()
+),
+BlockedExclusion AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2118 
+      AND dateto > NOW()
+)
+SELECT 
+    extp2.valuetext AS m2m_iccid,
+    CASE 
+        WHEN vc.extid IS NOT NULL
+             AND as1.extid IS NOT NULL
+             AND be.extid IS NULL
+        THEN 1
+        ELSE 0
+    END AS may_be_blocked,
+    NULL AS sdman_check,
+    NULL AS upos_check,
+    NULL AS agg_mob_pack_check,
+    NULL AS agg_mob_traf_check,
+    NULL AS last_active_date,
+    NULL AS block_status,
+    NULL AS success_block_date
+FROM 
+    dbo.m2mextensionproperty extp2
+LEFT JOIN 
+    ValidContracts vc ON extp2.extid = vc.extid
+LEFT JOIN 
+    ActiveStatus as1 ON extp2.extid = as1.extid
+LEFT JOIN 
+    BlockedExclusion be ON extp2.extid = be.extid
+WHERE 
+    extp2.propertyfieldid = 2052 
+    AND extp2.dateto > NOW();
+____________________________var2
+
+WITH ValidContracts AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2110 
+      AND LOWER(valuetext) = 'в договоре'
+      AND dateto > NOW()
+),
+ActiveStatus AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2040 
+      AND valuetext <> 'Первоначальная блокировка'
+      AND (valuetext = 'Активен' OR valuetext IS NULL)
+      AND dateto > NOW()
+),
+BlockedExclusion AS (
+    SELECT extid
+    FROM dbo.m2mextensionproperty
+    WHERE propertyfieldid = 2118 
+      AND dateto > NOW()
+)
+SELECT 
+    extp2.valuetext AS m2m_iccid,
+    CASE 
+        WHEN extp2.extid IN (SELECT extid FROM ValidContracts)
+             AND extp2.extid IN (SELECT extid FROM ActiveStatus)
+             AND extp2.extid NOT IN (SELECT extid FROM BlockedExclusion)
+        THEN 1
+        ELSE 0
+    END AS may_be_blocked,
+    NULL AS sdman_check,
+    NULL AS upos_check,
+    NULL AS agg_mob_pack_check,
+    NULL AS agg_mob_traf_check,
+    NULL AS last_active_date,
+    NULL AS block_status,
+    NULL AS success_block_date
+FROM 
+    dbo.m2mextensionproperty extp2
+WHERE 
+    extp2.propertyfieldid = 2052 
+    AND extp2.dateto > NOW();
+______________var3_______________________________________
+SELECT 
+    extp2.valuetext AS m2m_iccid,
+    CASE 
+        WHEN extp2.extid NOT IN (
+            SELECT extid
+            FROM dbo.m2mextensionproperty
+            WHERE propertyfieldid = 2118 
+              AND dateto > NOW()
+        )
+        AND extp2.extid IN (
+            SELECT extid
+            FROM dbo.m2mextensionproperty
+            WHERE propertyfieldid = 2110 
+              AND LOWER(valuetext) = 'в договоре'
+              AND dateto > NOW()
+        )
+        AND extp2.extid IN (
+            SELECT extid
+            FROM dbo.m2mextensionproperty
+            WHERE propertyfieldid = 2040 
+              AND valuetext <> 'Первоначальная блокировка'
+              AND (valuetext = 'Активен' OR valuetext IS NULL)
+              AND dateto > NOW()
+        )
+        THEN 1
+        ELSE 0
+    END AS may_be_blocked,
+    NULL AS sdman_check,
+    NULL AS upos_check,
+    NULL AS agg_mob_pack_check,
+    NULL AS agg_mob_traf_check,
+    NULL AS last_active_date,
+    NULL AS block_status,
+    NULL AS success_block_date
+FROM 
+    dbo.m2mextensionproperty extp2
+WHERE 
+    extp2.propertyfieldid = 2052 
+    AND extp2.dateto > NOW();
+
