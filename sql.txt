@@ -2701,3 +2701,43 @@ CREATE INDEX IF NOT EXISTS idx_mobsimtypes_id ON dbo.mobsimtypes (id);
 CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_extid ON dbo.m2mextensionproperty (extid);
 CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_propertyfieldid ON dbo.m2mextensionproperty (propertyfieldid);
 CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_dateto ON dbo.m2mextensionproperty (dateto);
+
+
+
+SELECT 
+    extp.valuetext AS m2m_iccid,
+    CASE 
+        WHEN LOWER(extp3.valuetext) = 'в договоре'
+             AND extp_main.extid NOT IN (
+                SELECT extid
+                FROM dbo.m2mextensionproperty
+                WHERE propertyfieldid = 2118 
+                  AND dateto > NOW() 
+                  AND LOWER(valuetext) = 'да'
+            )
+             AND extp2.propertyfieldid = 2040
+             AND extp2.valuetext <> 'Первоначальная блокировка'
+             AND (extp2.valuetext = 'Активен' OR extp2.valuetext IS NULL)
+        THEN 1
+        ELSE 0
+    END AS may_be_blocked,
+    NULL AS sdman_check,
+    NULL AS upos_check,
+    NULL AS agg_mob_pack_check,
+    NULL AS agg_mob_traf_check,
+    NULL AS last_active_date,
+    NULL AS block_status,
+    NULL AS success_block_date
+FROM 
+    dbo.m2mextensionproperty extp_main
+JOIN 
+    dbo.m2mextensionproperty extp ON extp_main.extid = extp.extid
+JOIN 
+    dbo.m2mextensionproperty extp2 ON extp_main.extid = extp2.extid
+JOIN 
+    dbo.m2mextensionproperty extp3 ON extp_main.extid = extp3.extid
+WHERE 
+    extp_main.propertyfieldid = 2052 
+    AND extp_main.dateto > NOW()
+    AND extp.propertyfield = 2110
+    AND extp.dateto > NOW();
