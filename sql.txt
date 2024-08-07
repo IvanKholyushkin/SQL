@@ -2877,21 +2877,32 @@ WHERE
     AND extp2.dateto > NOW();
 
 _________________________________________не получаем физическую таблицу
-CREATE OR ALTER FUNCTION dbo.GetAllM2MData()
-RETURNS TABLE
-AS
-RETURN
-(
+CREATE OR REPLACE FUNCTION GetAllM2MData()
+RETURNS TABLE (
+    m2m_identifier VARCHAR(255),
+    may_be_blocked BOOLEAN,
+    sdman_check BOOLEAN,
+    upos_check BOOLEAN,
+    agg_mob_pack_check BOOLEAN,
+    agg_mob_traf_check BOOLEAN,
+    last_active_date TIMESTAMP,
+    block_status INT,
+    success_block_date TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
     WITH ValidContracts AS (
         SELECT extid
-        FROM dbo.m2mextensionproperty
+        FROM m2mextensionproperty
         WHERE propertyfieldid = 2110 
           AND LOWER(valuetext) = 'в договоре'
           AND dateto > NOW()
     ),
     ActiveStatus AS (
         SELECT extid
-        FROM dbo.m2mextensionproperty
+        FROM m2mextensionproperty
         WHERE propertyfieldid = 2040 
           AND valuetext <> 'Первоначальная блокировка'
           AND (valuetext = 'Активен' OR valuetext IS NULL)
@@ -2899,7 +2910,7 @@ RETURN
     ),
     BlockedExclusion AS (
         SELECT extid
-        FROM dbo.m2mextensionproperty
+        FROM m2mextensionproperty
         WHERE propertyfieldid = 2118 
           AND dateto > NOW()
     )
@@ -2909,28 +2920,24 @@ RETURN
             WHEN extp2.extid IN (SELECT extid FROM ValidContracts)
                  AND extp2.extid IN (SELECT extid FROM ActiveStatus)
                  AND extp2.extid NOT IN (SELECT extid FROM BlockedExclusion)
-            THEN 1
-            ELSE 0
+            THEN TRUE
+            ELSE FALSE
         END AS may_be_blocked,
-        NULL AS sdman_check,
-        NULL AS upos_check,
-        NULL AS agg_mob_pack_check,
-        NULL AS agg_mob_traf_check,
-        NULL AS last_active_date,
-        NULL AS block_status,
-        NULL AS success_block_date
+        NULL::BOOLEAN AS sdman_check,
+        NULL::BOOLEAN AS upos_check,
+        NULL::BOOLEAN AS agg_mob_pack_check,
+        NULL::BOOLEAN AS agg_mob_traf_check,
+        NULL::TIMESTAMP AS last_active_date,
+        NULL::INT AS block_status,
+        NULL::TIMESTAMP AS success_block_date
     FROM 
-        dbo.m2mextensionproperty extp2
+        m2mextensionproperty extp2
     WHERE 
         extp2.propertyfieldid = 2052 
-        AND extp2.dateto > GETDATE();
-);
-Использование функции
-После создания функции GetAllM2MData, вы можете получить данные, выполняя:
+        AND extp2.dateto > NOW();
+END;
+$$;
 
-sql
-Копировать код
-SELECT * FROM dbo.GetAllM2MData();
 ___________________________________________________физ таблица
 
 -- Удаляем таблицу, если она уже существует, чтобы избежать ошибки при создании
