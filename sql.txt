@@ -2670,3 +2670,34 @@ while index < len(data) - 4:
     index += 1
 
 print("Последняя дата пинга:", latest_date if latest_date != datetime.min else "не найдена")
+
+
+-- Индексы для таблицы m2mextension
+CREATE INDEX IF NOT EXISTS idx_m2mextension_idr ON dbo.m2mextension (idr);
+
+-- Индексы для таблицы taraccounts
+CREATE INDEX IF NOT EXISTS idx_taraccounts_id ON dbo.taraccounts (id);
+
+-- Индексы для таблицы taroperator
+CREATE INDEX IF NOT EXISTS idx_taroperator_idr ON dbo.taroperator (idr);
+
+-- Индексы для таблицы m2mpropgosbtoterbank
+CREATE INDEX IF NOT EXISTS idx_m2mpropgosbtoterbank_extid ON dbo.m2mpropgosbtoterbank (extid);
+
+-- Индексы для таблицы catgosbtoterbank
+CREATE INDEX IF NOT EXISTS idx_catgosbtoterbank_id ON dbo.catgosbtoterbank (id);
+
+-- Индексы для таблицы m2mpropsimtypestoterbank
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_extid ON dbo.m2mpropsimtypestoterbank (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mpropsimtypestoterbank_dateto ON dbo.m2mpropsimtypestoterbank (dateto);
+
+-- Индексы для таблицы mobsimtypesclassestoterbank
+CREATE INDEX IF NOT EXISTS idx_mobsimtypesclassestoterbank_idr ON dbo.mobsimtypesclassestoterbank (idr);
+
+-- Индексы для таблицы mobsimtypes
+CREATE INDEX IF NOT EXISTS idx_mobsimtypes_id ON dbo.mobsimtypes (id);
+
+-- Индексы для таблицы m2mextensionproperty
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_extid ON dbo.m2mextensionproperty (extid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_propertyfieldid ON dbo.m2mextensionproperty (propertyfieldid);
+CREATE INDEX IF NOT EXISTS idx_m2mextensionproperty_dateto ON dbo.m2mextensionproperty (dateto);
