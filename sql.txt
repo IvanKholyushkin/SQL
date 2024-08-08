@@ -3113,3 +3113,65 @@ if result:
     print("Date BE (ms):", result[3])
 else:
     print("Tag not found or invalid data")
+
+CREATE OR REPLACE FUNCTION InsertIntoM2MDataUpload()
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Вставляем данные в таблицу m2m_data_upload
+    WITH ValidContracts AS (
+        SELECT extid
+        FROM m2mextensionproperty
+        WHERE propertyfieldid = 2110 
+          AND LOWER(valuetext) = 'в договоре'
+          AND dateto > NOW()
+    ),
+    ActiveStatus AS (
+        SELECT extid
+        FROM m2mextensionproperty
+        WHERE propertyfieldid = 2040 
+          AND valuetext <> 'Первоначальная блокировка'
+          AND (valuetext = 'Активен' OR valuetext IS NULL)
+          AND dateto > NOW()
+    ),
+    BlockedExclusion AS (
+        SELECT extid
+        FROM m2mextensionproperty
+        WHERE propertyfieldid = 2118 
+          AND dateto > NOW()
+    )
+    INSERT INTO m2m_data_upload (
+        iccid, 
+        may_by_blocked, 
+        sdman_check, 
+        upos_check, 
+        agg_mob_pack_check, 
+        agg_mob_traf_check, 
+        last_active_date, 
+        block_status, 
+        success_block_date
+    )
+    SELECT 
+        extp2.valuetext AS iccid,
+        (CASE 
+            WHEN extp2.extid IN (SELECT extid FROM ValidContracts)
+                 AND extp2.extid IN (SELECT extid FROM ActiveStatus)
+                 AND extp2.extid NOT IN (SELECT extid FROM BlockedExclusion)
+            THEN 1
+            ELSE 0
+        END)::INTEGER AS may_by_blocked,
+        FALSE AS sdman_check,
+        FALSE AS upos_check,
+        FALSE AS agg_mob_pack_check,
+        FALSE AS agg_mob_traf_check,
+        NOW() AS last_active_date,
+        NULL::INTEGER AS block_status,
+        '2200-01-01 00:00:00'::TIMESTAMP AS success_block_date  -- Фиксированная дата
+    FROM 
+        m2mextensionproperty extp2
+    WHERE 
+        extp2.propertyfieldid = 2052 
+        AND extp2.dateto > NOW();
+END;
+$$;
