@@ -3068,3 +3068,48 @@ BEGIN
         AND extp2.dateto > NOW();
 END;
 $$;
+
+
+import base64
+from datetime import datetime, timedelta
+
+def decode_date_from_tag(data):
+    tag_index = data.find(b'\xCF')
+    
+    if tag_index != -1 and tag_index + 4 < len(data):
+        date_bytes = data[tag_index + 1:tag_index + 5]
+        # Вывод сырых байтов для диагностики
+        print("Raw date bytes:", date_bytes.hex())
+        
+        # Расчет как little-endian и big-endian
+        timestamp_le = int.from_bytes(date_bytes, byteorder='little')
+        timestamp_be = int.from_bytes(date_bytes, byteorder='big')
+        
+        # Вывод обоих вариантов
+        print("Timestamp LE (as seconds):", timestamp_le)
+        print("Timestamp BE (as seconds):", timestamp_be)
+        
+        # Преобразование в дату и время как секунды
+        base_date = datetime(1990, 1, 1)
+        date_le = base_date + timedelta(seconds=timestamp_le)
+        date_be = base_date + timedelta(seconds=timestamp_be)
+        
+        # Если метка времени могла быть в миллисекундах
+        date_le_ms = base_date + timedelta(milliseconds=timestamp_le)
+        date_be_ms = base_date + timedelta(milliseconds=timestamp_be)
+        
+        return (date_le, date_be, date_le_ms, date_be_ms)
+    return None
+
+# Пример использования
+base64_data = 'your_base64_string_here'
+decoded_data = base64.b64decode(base64_data)
+result = decode_date_from_tag(decoded_data)
+
+if result:
+    print("Date LE:", result[0])
+    print("Date BE:", result[1])
+    print("Date LE (ms):", result[2])
+    print("Date BE (ms):", result[3])
+else:
+    print("Tag not found or invalid data")
