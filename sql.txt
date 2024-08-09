@@ -3175,3 +3175,116 @@ BEGIN
         AND extp2.dateto > NOW();
 END;
 $$;
+
+WITH PreData AS (
+    SELECT
+        op.name AS operator,
+        ext.ext AS msisdn,
+        iccid.valuetext AS iccid,
+        st.name AS m2m_type,
+        ep.valuetext AS m2m_usemode,
+        tb.fullname AS tb,
+        g.name AS gosb,
+        NULL::CHARACTER VARYING AS status,
+        NULL::DATE AS block_date,
+        -- Extract dates where applicable
+        CASE 
+            WHEN ep.valuetext ~ '^SDWAN.*_([0-9]{4}-[0-9]{2}-[0-9]{2})$' THEN
+                to_date(regexp_replace(ep.valuetext, '.*_([0-9]{4}-[0-9]{2}-[0-9]{2}).*', '\1'), 'YYYY-MM-DD')
+            WHEN ep.valuetext ~ '^UPOS [^/]* ([0-9]{2}\.[0-9]{2}\.[0-9]{4})$' THEN
+                to_date(regexp_replace(ep.valuetext, '.* ([0-9]{2}\.[0-9]{2}\.[0-9]{4}).*', '\1'), 'DD.MM.YYYY')
+            ELSE
+                NULL
+        END AS extracted_date
+    FROM
+        dbo.m2mextension ext
+    JOIN
+        dbo.taraccounts acc ON ext.accountid = acc.id
+    JOIN
+        dbo.taroperator op ON acc.operatorid = op.idr
+    JOIN
+        dbo.m2mpropgosbtoterbank gm ON ext.idr = gm.extid
+    JOIN
+        dbo.catgosbtoterbank g ON g.id = gm.gosbtoterbankid
+    JOIN
+        dbo.m2mpropsimtypestoterbank stp ON ext.idr = stp.extid AND stp.dateto > NOW()
+    JOIN
+        dbo.mobsimtypesclassestoterbank stc ON stp.simtypesid = stc.idr
+    JOIN
+        dbo.mobsimtypes st ON stc.simtypeid = st.id
+    JOIN
+        dbo.m2mextensionproperty ep ON ext.idr = ep.extid
+    JOIN
+        dbo.m2mextensionproperty p1 ON ext.idr = p1.extid
+        AND p1.propertyfieldid = 2110
+        AND p1.dateto > now()
+        AND lower(p1.valuetext) = 'в договоре'
+    LEFT JOIN (
+        SELECT extid, valuetext
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = 2052
+        AND dateto > now()
+    ) iccid ON ext.idr = iccid.extid
+    JOIN
+        dbo.catterbank tb ON tb.id = acc.terbankid
+    WHERE
+        ext.idr NOT IN (
+            SELECT extid
+            FROM dbo.m2mextensionproperty
+            WHERE propertyfieldid = 2118
+            AND dateto > now()
+        )
+    AND ext.idr IN (
+        SELECT extid
+        FROM dbo.m2mextensionproperty
+        WHERE propertyfieldid = 2040
+        AND valuetext <> 'Первоначальная блокировка'
+        AND (valuetext = 'Активен' OR valuetext IS NULL)
+        AND dateto > now()
+    )
+    AND (
+        -- Only include rows with valid date formats
+        (
+            ep.valuetext LIKE 'SDWAN%' 
+            AND ep.valuetext SIMILAR TO 'SDWAN%_[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            AND st.name IN ('SDMAN УС', 'SDMAN ППКО/ВСП')
+            AND to_date(substring(ep.valuetext from '[0-9]{4}-[0-9]{2}-[0-9]{2}'), 'YYYY-MM-DD') < date_trunc('month', now()) - INTERVAL '2 months'
+        )
+        OR (
+            ep.valuetext LIKE 'UPOS%' 
+            AND ep.valuetext SIMILAR TO 'UPOS [0-9]{2}\.[0-9]{2}\.[0-9]{4}'
+            AND st.name IN ('POS-терминал', 'SmartPos')
+            AND to_date(substring(ep.valuetext from '[0-9]{2}\.[0-9]{2}\.[0-9]{4}'), 'DD.MM.YYYY') < date_trunc('month', now()) - INTERVAL '2 months'
+        )
+    )
+    AND (op.name = 'Сбербанк Телеком(M2M)' OR op.name = 'МТС (M2M)')
+    AND ext.idr NOT IN (
+        SELECT extid FROM dbo.aggmobilecalls_202303 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+        UNION ALL
+        SELECT extid FROM dbo.aggmobilecalls_202304 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+        UNION ALL
+        SELECT extid FROM dbo.aggmobilecalls_202305 WHERE servicetype = 'Интернет'
+        AND (operator = 'Сбербанк Телеком' OR operator = 'МТС (M2M)')
+    )
+)
+SELECT
+    operator,
+    msisdn,
+    iccid,
+    m2m_type,
+    m2m_usemode,
+    tb,
+    gosb,
+    status,
+    block_date
+FROM (
+    SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY msisdn, m2m_type ORDER BY
+            extracted_date DESC NULLS LAST
+        ) AS rn 
+    FROM PreData
+) ranked
+WHERE rn = 1;
+
